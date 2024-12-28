@@ -63,7 +63,7 @@ class JobScraper(CrawlSpider):
 
 
 # In order to start web scraping and save its' results to CSV file, the line given below needs to be run in the terminal:
-# scrapy crawl jobscraper -o output.csv -s FEED_EXPORT_ENCODING=utf-8 <-- irasys viska i csv faila
+# scrapy crawl jobscraper -o output.csv -s FEED_EXPORT_ENCODING=utf-8 
 
 
 # Useful information sources/tutorials:
