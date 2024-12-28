@@ -1,1 +1,1 @@
-##### This repository contains Python's scripts which were employed in my Master's thesis titled *"Classification of Job Advertisements Obtained using Web Scraping"*.
+##### This repository contains final Python's programming codes for the Master's thesis *"Classification of Job Advertisements Obtained using Web Scraping"* written by Rūta Kondrotaitė at Vilnius University (VU).
