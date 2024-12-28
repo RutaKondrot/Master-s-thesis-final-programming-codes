@@ -1,0 +1,82 @@
+import pandas as pd
+import numpy as np
+# pd.options.display.max_rows = None
+pd.options.display.max_columns = None
+
+import matplotlib as mpl
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import seaborn as sns
+
+
+df_job = pd.read_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned_data_adj1.csv', encoding='utf-8', usecols=['cleaned_description', 'code'], dtype={'code': 'str'})
+# df_job = pd.read_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned_data_adj1.csv', encoding='utf-8', usecols=['cleaned_title', 'code'])
+print("Type of variables:")
+print(df_job.dtypes)
+
+print("Number of rows before duplicates removal: ", len(df_job)) #8176 su dubliais
+# df_job = df_job.dropna()
+df_job = df_job.drop_duplicates()
+print("Number of rows after duplicates removal: ", len(df_job)) #7226 be dubliu
+
+print("Number of unique classificator's code: ", df_job['code'].nunique())
+
+df_job['words_count'] = df_job['cleaned_description'].apply(lambda x: len(str(x).split()))
+print("Number of words in each job description: ", df_job['words_count'])
+
+print("Average of words count in job description:", df_job['words_count'].mean())
+print("Minimum words count in job description:", df_job['words_count'].min())
+print("Maximum words count in job description:", df_job['words_count'].max())
+
+print("Checking the job description with least words: \n",
+      df_job[['code','cleaned_description']][df_job['words_count']==3])
+print("Such small words count wasn't caused by NLP. From the begining it was an exception, because it was almost empty.")
+
+
+print("Frequencies of each classificator's code:")
+code_counts = df_job.groupby('code').size()
+code_counts = code_counts.sort_values(ascending=False)
+print(code_counts)
+# code_counts.to_csv("value_counts.csv", encoding='utf-8')
+
+
+# Prepare the figure
+plt.figure(figsize=(10, 6))
+
+# Plot the line
+plt.plot(
+    df_job['code'].value_counts().index.astype(str),  # X-axis values
+    df_job['code'].value_counts().tolist(),           # Y-axis values
+    color='black',                                    # Line color
+    linewidth=1.5,                                        # Line width
+)
+
+# Fill the area under the curve
+plt.fill_between(
+    df_job['code'].value_counts().index.astype(str),  # X-axis values
+    df_job['code'].value_counts().tolist(),           # Y-axis values
+    color='black', alpha=0.5                         # Fill color with transparency
+)
+
+# Customize the plot
+plt.xlabel("Codes of the national version of ISCO", fontsize=12, labelpad=10)
+plt.ylabel("Number of job descriptions", fontsize=12)
+plt.title("The dataset's distribution", fontsize=14, pad=10)
+
+# Set the edge color of the spines to light gray
+for spine in plt.gca().spines.values():
+    spine.set_edgecolor('lightgray')
+
+# Set grid and show it
+plt.grid(axis='both', linestyle='--', alpha=0.7)
+
+# Set x-ticks to show only every 10th label
+tick_positions = range(0, len(df_job['code'].value_counts().index.astype(str)), 10)  # Select every 10th tick
+tick_labels = [df_job['code'].value_counts().index.astype(str)[i] for i in tick_positions]  # Get the corresponding labels
+plt.xticks(tick_positions, tick_labels, rotation=90)
+plt.margins(x=0.01)
+plt.ylim(0, 350)
+# Show the plot
+plt.tight_layout()
+plt.show()
