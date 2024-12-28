@@ -1,0 +1,19 @@
+# Scrapy's documentation: https://docs.scrapy.org/en/latest/topics/items.html
+
+import scrapy
+
+# Create definitions of items that need to be web scraped from the website
+
+class JobsprojectItem(scrapy.Item):
+    # define the fields for your item here like:
+    # name = scrapy.Field()
+    ad_id = scrapy.Field()
+    title = scrapy.Field()
+    company = scrapy.Field()
+    salary = scrapy.Field()
+    location = scrapy.Field()
+    description = scrapy.Field()
+    posted_date = scrapy.Field()
+    expiration_date = scrapy.Field()
+    url = scrapy.Field()
+    pass
