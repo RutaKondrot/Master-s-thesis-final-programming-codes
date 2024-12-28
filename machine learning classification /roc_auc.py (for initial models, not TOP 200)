@@ -1,0 +1,186 @@
+import time
+import pandas as pd
+import numpy as np
+# pd.options.display.max_rows = None
+pd.options.display.max_columns = None
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import LinearSVC
+
+import sklearn.metrics as metrics
+from sklearn.model_selection import train_test_split
+# from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score
+
+import matplotlib as mpl
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import seaborn as sns
+# from sklearn.preprocessing import LabelEncoder
+
+from sklearn.preprocessing import LabelBinarizer
+from sklearn.metrics import RocCurveDisplay
+from sklearn.metrics import roc_curve, roc_auc_score
+
+
+df_job = pd.read_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned_data_adj1.csv', encoding='utf-8', usecols=['cleaned_description', 'code'], dtype={'code': 'str'})
+# print(df_job.dtypes)
+# df_job = df_job.dropna()
+df_job = df_job.drop_duplicates()
+# print(len(df_job)) #7226
+# print(df_job['code'].nunique()) #637
+
+# # Classificator's code counts:
+# code_counts = df_job.groupby('code').size()
+# code_counts = code_counts.sort_values(ascending=False)
+# # code_counts.to_csv("value_counts.csv", encoding='utf-8')
+# print(code_counts)
+
+# Removing classificator's codes which have only 1 job description
+df_job = df_job[df_job['code'].map(df_job['code'].value_counts()) > 1]
+
+# ValueError: The least populated class in y has only 1 member, which is too few. The minimum number of groups for any class cannot be less than 2. (this appears in the TRAIN-TEST SPLIT part)
+# print(len(df_job)) #7047
+# print(df_job['code'].nunique()) #458
+
+
+##########
+# TF-IDF #
+##########
+
+docs = list(df_job['cleaned_description'])
+tfidf_vectorizer = TfidfVectorizer(use_idf=True)#, max_features = 25000) # True - enables the use of the IDF weighting; there is no default size for max_features
+tfidf_vectorizer_vectors = tfidf_vectorizer.fit_transform(docs)
+print(f"Number of features: {tfidf_vectorizer_vectors.shape[1]}") # in this dataset there are 24021 features
+docs = tfidf_vectorizer_vectors.toarray()
+
+X = docs
+y = df_job['code']
+print(X.shape, y.shape)
+
+SEED = 123
+
+### Initial model's paramters:
+mnb = MultinomialNB()
+svc = LinearSVC(class_weight='balanced')
+dt = DecisionTreeClassifier(random_state=SEED) 
+rf = RandomForestClassifier(random_state=SEED)
+knn = KNeighborsClassifier()
+
+columns = ['Model', 'Accuracy', 'Precision', 'Recall', 'F1-score', 'Support']
+df_results = pd.DataFrame(columns=columns)
+
+# df_proportions = pd.Series(df_job['code']).value_counts(normalize=True)
+# print("Proportions in dataset:")
+# print(df_proportions)
+
+# Split dataset into train (70%) and test (30%)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=SEED, stratify=y)
+train_proportions = pd.Series(y_train).value_counts(normalize=True)
+# print("Proportions in y_train:")
+# print(train_proportions)
+test_proportions = pd.Series(y_test).value_counts(normalize=True)
+# print("Proportions in y_test:")
+# print(test_proportions)
+
+# Check if shapes of X_train/test and y_train/test match
+print(len(y_test), len(X_test), len(y_train), len(X_train))
+
+
+label_binarizer = LabelBinarizer().fit(y_train)
+y_onehot_test = label_binarizer.transform(y_test)
+y_onehot_test.shape  # (n_samples, n_classes)
+print(y_onehot_test.shape)
+
+
+# List of models to compare
+models = {
+    "MNB": mnb, #MultinomialNB
+    "SVM": svc, #LinearSVC
+    "DT": dt, #DecisionTreeClassifier
+    "RF": rf, #RandomForest
+    "KNN": knn #KNeighborsClassifier
+}
+
+# Define custom styles for each model
+styles = {
+    "MNB": {"color": "black", "linestyle": "--", "lw": 1.5},
+    "SVM": {"color": "black", "linestyle": "-.", "lw": 1.5},
+    "DT": {"color": "black", "linestyle": ":", "lw": 1.5},
+    "RF": {"color": "black", "linestyle": (0, (5, 10)), "lw": 1.5},
+    "KNN": {"color": "black", "linestyle": "-", "lw": 1.5},
+}
+
+
+# Prepare the figure
+plt.figure(figsize=(10, 6))
+
+# Iterate over the models
+for model_name, model in models.items():
+    # Fit the model
+    model.fit(X_train, y_train)
+
+    # Get model scores
+    if hasattr(model, "predict_proba"):
+        y_score = model.predict_proba(X_test)
+    elif hasattr(model, "decision_function"):
+        y_score = model.decision_function(X_test)
+    else:
+        raise ValueError(f"Model {model_name} does not support probabilities or decision function.")
+
+    # Compute ROC curve values
+    fpr, tpr, _ = roc_curve(y_onehot_test.ravel(), y_score.ravel())
+
+    # Calculate AUC
+    auc_score = roc_auc_score(y_onehot_test.ravel(), y_score.ravel())
+
+    # Scale FPR and TPR to percentages
+    fpr_percent = fpr * 100
+    tpr_percent = tpr * 100
+
+    # Plot the scaled ROC curve
+    plt.plot(
+        fpr_percent,
+        tpr_percent,
+        label=f"{model_name} (AUC = {auc_score * 100:.0f}%)",
+        **styles[model_name],  # Apply the model-specific styles
+    )
+
+# Add a chance level line (diagonal line from (0, 0) to (1, 1))
+chance_line_x = np.linspace(0, 100, 100)  # Already in percentages
+chance_line_y = chance_line_x
+plt.plot(
+    chance_line_x,
+    chance_line_y,
+    linestyle="--",
+    color="red",
+    label="Chance level (AUC = 50%)",
+    lw = 1.5
+)
+
+# Customize the plot
+plt.xlabel("False Positive (FP) rate, %", fontsize=12)#, labelpad=10)
+plt.ylabel("True Positive (TP) rate, %", fontsize=12)
+plt.title("Comparison of ROC curves (OvR micro-averaged) for initial classification models", fontsize=14, pad=10)
+
+# Set the edge color of the spines to light gray
+for spine in plt.gca().spines.values():
+    spine.set_edgecolor('lightgray')
+
+plt.legend(loc="lower right", fontsize=12)
+# plt.grid(True)
+plt.grid(axis='both', linestyle='--', alpha=0.7)
+
+plt.margins(x=0.01)
+plt.ylim(0, 102)
+
+# Show the plot
+plt.tight_layout()
+plt.show()
