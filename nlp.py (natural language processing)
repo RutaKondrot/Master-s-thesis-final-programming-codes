@@ -1,0 +1,77 @@
+# from dask.distributed import Client
+import dask.dataframe as dd
+import dask
+import re
+import emoji
+import time
+import spacy
+import pandas as pd
+import gc
+
+# Setup SpaCy model
+nlp = spacy.load("lt_core_news_lg")
+
+# Function definitions 
+def initial_clean(document):
+    suffixes = [
+        r'\(-ė\)', r'\(-ius\)', r'\(-is\)', r'\(-as\)', r'\(-iai\)', r'\(-ės\)',
+        r'\(-ioji\)', r'\(-ysis\)', r'\(-ei\)', r'\(-iui\)', r'\(-a\)',
+        r'\(-o\)', r'\(-iaus\)', r'\(-ai\)', r'\(-os\)', r'\(-io\)', r'\(-is\)', r'\(-u\)'
+    ]
+    suffix_pattern = r'\s*(' + '|'.join(suffixes) + r')\s*'
+    cleaned_doc = re.sub(suffix_pattern, ' ', document, flags=re.IGNORECASE).title()
+    return cleaned_doc
+
+def remove_ner_stop(document):
+    doc = nlp(document)
+    cleaned_doc = []
+    for item in doc:
+        is_person_or_org = any(ent.text == item.text and ent.label_ in ['ORG', 'PERSON'] for ent in doc.ents)
+        other_ner = any(ent.text == item.text and ent.label_ not in ['ORG', 'PERSON'] for ent in doc.ents)
+        if is_person_or_org or not (item.is_stop or other_ner):
+            cleaned_doc.append(item.text)
+    return " ".join(cleaned_doc).lower()
+
+def last_clean(document):
+    document = str(document)
+    cleaned_doc = re.sub(r'\(.*?\)', '', document)
+    cleaned_doc = re.sub(r'\|.*', '', cleaned_doc).strip()
+    cleaned_doc = re.sub(r'[^\w\s]', '', re.sub(r'\d', '', cleaned_doc))
+    cleaned_doc = ''.join(c for c in cleaned_doc if c not in emoji.EMOJI_DATA)
+    cleaned_doc = re.sub(r'\s+', ' ', cleaned_doc).strip()
+    return cleaned_doc
+
+def lemmatize(document):
+    doc = nlp(document)
+    lemmatized_text = " ".join([token.lemma_ for token in doc])
+    return lemmatized_text
+
+def wrapper_func(document):
+    document = initial_clean(document)
+    document = remove_ner_stop(document)
+    document = last_clean(document)
+    document = lemmatize(document)
+    return document
+
+chunksize = 4000 #ant darbinio pc su 3000 prasileido be problemu
+
+def clean_partition(chunk, output_path):
+    # Apply wrapper_func to both 'title' and 'description' columns with appropriate meta
+    chunk['cleaned_title'] = chunk['title'].map(wrapper_func)#apply(wrapper_func)
+    gc.collect()
+    chunk['cleaned_description'] = chunk['description'].map(wrapper_func)#apply(wrapper_func)
+    gc.collect()
+
+    # Append the cleaned chunk to a CSV file
+    chunk.to_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned data\\cleaned_data_adj1.csv', mode='a', header=not pd.io.common.file_exists('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned data\\cleaned_data_adj1.csv'), index=False)
+    gc.collect() #band
+#pakeitus i apply suveike ir visas eilutes surase i csv
+
+# chunksize = 1000
+# df = pd.read_csv('C:\\Users\\rkondrotaite\\Downloads\\lt_data.csv', encoding='utf-8', chunksize=chunksize)
+start_time = time.time()
+for chunk in pd.read_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\lt_data.csv', encoding='utf-8', chunksize=chunksize):  # Adjust chunksize as needed
+    clean_partition(chunk, 'C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned data\\cleaned_data_adj1.csv')
+end_time = time.time()
+print(f"Processing time: {end_time - start_time:.2f} seconds")
+print("Job ended successfully!")
