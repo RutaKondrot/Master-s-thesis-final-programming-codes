@@ -1,0 +1,71 @@
+from scrapy.spiders import CrawlSpider, Rule
+from scrapy.linkextractors import LinkExtractor
+from jobsproject.items import JobsprojectItem
+
+
+class JobScraper(CrawlSpider):
+    name = "jobscraper"
+    start_urls = ["https://www.cvbankas.lt/"]
+
+    rules = (
+        Rule(LinkExtractor(restrict_css=".pages_ul_inner a"), follow=True),
+        Rule(LinkExtractor(restrict_css=".main_long > div > article > a"), callback = "parse_job")
+    )
+
+    def parse_job(self, response):
+        job_item = JobsprojectItem()
+
+        job_item["ad_id"] = response.css('input[name="ad_id"]::attr(value)').get()
+        job_item["title"] = response.css("h1#jobad_heading1.heading1::text").get()
+        job_item["company"] = response.css('#jobad_location::text').getall()[-1].strip().lstrip('- ')
+        job_item["salary"] = response.css("span.salary_amount::text").get()
+        job_item["location"] = response.css('span[itemprop="addressLocality"]::text').get()
+        job_item["description"] = ' '.join(response.css('div.jobad_txt *::text').getall()).strip()
+
+        # Extract posted/extended date and expiration date from 'title' attribute
+        title_text = response.css("time#jobad_expiration::attr(title)").get()
+
+        if title_text:
+            # Remove any stray characters like newlines and trim extra spaces
+            clean_title_text = ' '.join(title_text.split())
+
+            # Define the prefixes for posted and expiration dates
+            posted_prefixes = ['Įdėtas / pratęstas / apmokėtas:', 'Posted / prolonged / paid:', 'Опубликовано / продлено / оплачено:']
+            expiration_prefixes = ['Skelbimas galioja iki:', 'Job ad valid through:', 'Объявление о работе действительно до:']
+
+            # Initialize variables to store the dates
+            posted_date = None
+            expiration_date = None
+
+            # Check for posted date prefixes and remove them
+            for prefix in posted_prefixes:
+                if prefix in clean_title_text:
+                    # Remove the prefix and split the string for date extraction
+                    clean_title_text = clean_title_text.replace(prefix, '').strip()
+                    break  # Exit loop once we find and replace a prefix
+
+            # Split the remaining text by expiration prefixes to extract dates
+            for expiration_prefix in expiration_prefixes:
+                if expiration_prefix in clean_title_text:
+                    # Split by the expiration prefix
+                    date_parts = clean_title_text.split(expiration_prefix)
+                    posted_date = date_parts[0].strip()  # Get the posted date
+                    expiration_date = date_parts[1].strip() if len(date_parts) > 1 else None
+                    break  # Exit loop once we find an expiration prefix
+
+            # Assign the extracted dates to the job_item
+            job_item["posted_date"] = posted_date
+            job_item["expiration_date"] = expiration_date
+
+        job_item["url"] = response.url
+
+        return job_item
+
+
+# In order to start web scraping and save its' results to CSV file, the line given below needs to be run in the terminal:
+# scrapy crawl jobscraper -o output.csv -s FEED_EXPORT_ENCODING=utf-8 <-- irasys viska i csv faila
+
+
+# Useful information sources/tutorials:
+# https://www.geeksforgeeks.org/scrapy-spiders/
+# https://www.dataquest.io/blog/web-scraping-with-scrapy/
