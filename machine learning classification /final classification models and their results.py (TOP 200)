@@ -1,0 +1,384 @@
+import re
+import string
+import time
+import pandas as pd
+import numpy as np
+# pd.options.display.max_rows = None
+pd.options.display.max_columns = None
+import gc
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
+
+from sklearn.metrics import accuracy_score
+import sklearn.metrics as metrics
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn import metrics
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+
+import matplotlib as mpl
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import seaborn as sns
+# from sklearn.preprocessing import LabelEncoder
+
+df_job = pd.read_csv('C:\\Users\\el ruchenzo\\jobsproject\\jobsproject\\cleaned_data_adj1.csv', encoding='utf-8', usecols=['cleaned_description', 'code'], dtype={'code': 'str'})
+# print(df_job.dtypes)
+# df_job = df_job.dropna()
+df_job = df_job.drop_duplicates()
+# print(len(df_job)) #7226
+# print(df_job['code'].nunique()) #637
+
+# Classificator's code counts:
+code_counts = df_job.groupby('code').size()
+code_counts = code_counts.sort_values(ascending=False)
+# code_counts.to_csv("value_counts.csv", encoding='utf-8')
+print(code_counts)
+
+# Removing classificator's codes which have only 1 job description
+df_job = df_job[df_job['code'].map(df_job['code'].value_counts()) > 1]
+# ValueError: The least populated class in y has only 1 member, which is too few. The minimum number of groups for any class cannot be less than 2. (this appears in the TRAIN-TEST SPLIT part)
+# print(len(df_job)) #7047
+# print(df_job['code'].nunique()) #458
+
+N = list(range(1, 11)) ##458 unique codes in total, 1 left as others; pries tai dariau top200, tai buvau nustacius 201
+
+top_lists = {}
+
+for n in N:
+    top_lists[n] = code_counts.index[0:n].to_list()
+    # print("TOP", n, ":", top_lists[n])
+
+
+##########
+# TF-IDF #
+##########
+
+docs = list(df_job['cleaned_description'])
+tfidf_vectorizer = TfidfVectorizer(use_idf=True)#, max_features = 25000) # True - enables the use of the IDF weighting; there is no default size for max_features
+tfidf_vectorizer_vectors = tfidf_vectorizer.fit_transform(docs)
+print(f"Number of features: {tfidf_vectorizer_vectors.shape[1]}") # in this dataset there are 24021 features
+docs = tfidf_vectorizer_vectors.toarray()
+
+X = docs
+# y = df_job['label'] #'code'
+# print(X.shape, y.shape)
+
+SEED = 123
+
+mnb = MultinomialNB(alpha=1e-10, force_alpha=False)
+svc = LinearSVC(class_weight='balanced', random_state=SEED)#, multi_class="crammer_singer")
+dt = DecisionTreeClassifier(random_state=SEED, splitter="random") #random best split
+rf = RandomForestClassifier(random_state=SEED)
+knn = KNeighborsClassifier()#n_neighbors=5) by default, p=2 by default (Euclidean distance)
+
+columns = ['Title', 'Model', 'Accuracy', 'Precision', 'Recall', 'F1-score', 'Support']
+df_results = pd.DataFrame(columns=columns)
+
+start_time = time.time()
+
+for n in N:
+    # Group classificator's code to "TOP n" and "Others:
+    df_job['label'] = df_job['code'].map(lambda x: x if x in top_lists[n] else "Others")
+    df_proportions = pd.Series(df_job['label']).value_counts(normalize=True)
+    print("Proportions in dataset:")
+    print(df_proportions)
+
+    y = df_job['label']
+    code_counts.sort_values(ascending=False)
+    # Check if shapes of X and y match
+    print(X.shape, y.shape)
+    # Print distribution of job descriptions of "Top n and Others"
+    # fig = go.Figure([
+    #     go.Bar(
+    #         x=df_job['label'].value_counts().index.astype(str),
+    #         y=df_job['label'].value_counts().tolist(),
+    #         text=df_job['label'].value_counts().tolist(),
+    #         textposition='auto',
+    #         textfont=dict(size=12),
+    #         marker=dict(color='black')
+    #     )
+    # ])
+    #
+    # # Update the layout
+    # fig.update_layout(
+    #     title = f"TOP {n} codes of the National Version of ISCO and Others",
+    #     template="plotly_white",  # Use the white theme
+    #     # title="The Dataset's Distribution",#"Number of Job Descriptions According to the National Version of ISCO",
+    #     title_x=0.5,
+    #     xaxis_title="Codes of the National Version of ISCO",
+    #     yaxis_title="Number of Job Descriptions",
+    #     width=1000,  # Width in pixels
+    #     height=600,  # Height in pixels
+    # )
+    #
+    # # fig.show()
+
+    # Split dataset into train (70%) and test (30%)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=SEED, stratify=y)
+    train_proportions = pd.Series(y_train).value_counts(normalize=True)
+    print("Proportions in y_train:")
+    print(train_proportions)
+    test_proportions = pd.Series(y_test).value_counts(normalize=True)
+    print("Proportions in y_test:")
+    print(test_proportions)
+
+
+    # Check if shapes of X_train/test and y_train/test match
+    print(len(y_test), len(X_test), len(y_train), len(X_train))
+
+    ###
+    ### MNB:
+    ###
+    mnb.fit(X_train, y_train)
+
+    y_pred_train = mnb.predict(X_train)
+    y_pred_test = mnb.predict(X_test)
+    report = classification_report(y_test, y_pred_test, zero_division=0, output_dict=True)
+    weighted_avg = report['weighted avg']
+    accuracy = accuracy_score(y_test, y_pred_test)
+    # print(report)
+    print(classification_report(y_test, y_pred_test, zero_division=0))
+    # print(weighted_avg)
+    mnb_results = {
+        'Title': f'Top{n}',  # or any identifier for the model
+        'Model': f'MNB',
+        'Accuracy': accuracy,
+        'Precision': weighted_avg['precision'],
+        'Recall': weighted_avg['recall'],
+        'F1-score': weighted_avg['f1-score'],
+        'Support': weighted_avg['support']
+    }
+
+    mnb_results_df = pd.DataFrame([mnb_results])
+    print(f"TOP {n} MNB results: ")
+    print(mnb_results_df)
+
+    # Append the dictionary to the DataFrame
+    df_results = pd.concat([df_results, mnb_results_df], ignore_index=True)
+
+    ###
+    ### SVM:
+    ###
+
+    svc.fit(X_train, y_train)
+
+    y_pred_train = svc.predict(X_train)
+    y_pred_test = svc.predict(X_test)
+    report = classification_report(y_test, y_pred_test, zero_division=0, output_dict=True)
+    weighted_avg = report['weighted avg']
+    accuracy = accuracy_score(y_test, y_pred_test)
+    # print(report)
+    # print(weighted_avg)
+
+    svm_results = {
+        'Title': f'Top{n}',  # or any identifier for the model
+        'Model': f'SVM',
+        'Accuracy': accuracy,
+        'Precision': weighted_avg['precision'],
+        'Recall': weighted_avg['recall'],
+        'F1-score': weighted_avg['f1-score'],
+        'Support': weighted_avg['support']
+    }
+
+    svm_results_df = pd.DataFrame([svm_results])
+    print(f"TOP {n} SVM results: ")
+    # print(svm_results_df)
+    print(classification_report(y_test, y_pred_test, zero_division=0))
+    # Append the dictionary to the DataFrame
+    df_results = pd.concat([df_results, svm_results_df], ignore_index=True)
+
+
+    ###
+    ### DT:
+    ###
+
+    dt.fit(X_train, y_train)
+
+    y_pred_train = dt.predict(X_train)
+    y_pred_test = dt.predict(X_test)
+
+    report = classification_report(y_test, y_pred_test, zero_division=0, output_dict=True)
+    weighted_avg = report['weighted avg']
+    accuracy = accuracy_score(y_test, y_pred_test)
+    # print(report)
+    # print(weighted_avg)
+
+    dt_results = {
+        'Title': f'Top{n}',  # or any identifier for the model
+        'Model': f'DT',
+        'Accuracy': accuracy,
+        'Precision': weighted_avg['precision'],
+        'Recall': weighted_avg['recall'],
+        'F1-score': weighted_avg['f1-score'],
+        'Support': weighted_avg['support']
+    }
+
+    dt_results_df = pd.DataFrame([dt_results])
+    print(f"TOP {n} DT results: ")
+    # print(dt_results_df)
+    print(report)
+
+    # Append the dictionary to the DataFrame
+    df_results = pd.concat([df_results, dt_results_df], ignore_index=True)
+
+    ##
+    ## RF:
+    ##
+
+    rf.fit(X_train, y_train)
+    y_pred = rf.predict(X_test)
+
+    report = classification_report(y_test, y_pred, zero_division=0, output_dict=True)
+    weighted_avg = report['weighted avg']
+    # accuracy = accuracy_score(y_test, y_pred_test)
+    # from sklearn import metrics
+    accuracy = metrics.accuracy_score(y_test, y_pred)
+    print(classification_report(y_test, y_pred, zero_division=0))
+    # print(weighted_avg)
+
+    rf_results = {
+    'Title': f'Top{n}',  # or any identifier for the model
+    'Model': f'RF',
+    'Accuracy': accuracy,
+    'Precision': weighted_avg['precision'],
+    'Recall': weighted_avg['recall'],
+    'F1-score': weighted_avg['f1-score'],
+    'Support': weighted_avg['support']
+}
+
+    rf_results_df = pd.DataFrame([rf_results])
+    print(f"TOP {n} RF results: ")
+    # print(rf_results_df)
+    print(report)
+
+    # Append the dictionary to the DataFrame
+    df_results = pd.concat([df_results, rf_results_df], ignore_index=True)
+
+    ###
+    ### KNN:
+    ###
+
+    knn.fit(X_train, y_train)
+    y_pred = knn.predict(X_test)
+
+    report = classification_report(y_test, y_pred, zero_division=0, output_dict=True)
+    weighted_avg = report['weighted avg']
+    accuracy = accuracy_score(y_test, y_pred)
+    # print(report)
+    # print(weighted_avg)
+
+    knn_results = {
+        'Title': f'Top{n}',  # or any identifier for the model
+        'Model': f'KNN',
+        'Accuracy': accuracy,
+        'Precision': weighted_avg['precision'],
+        'Recall': weighted_avg['recall'],
+        'F1-score': weighted_avg['f1-score'],
+        'Support': weighted_avg['support']
+    }
+
+    knn_results_df = pd.DataFrame([knn_results])
+    print(f"TOP {n} KNN results: ")
+    # print(knn_results_df)
+    print(classification_report(y_test, y_pred, zero_division=0))
+    # Append the dictionary to the DataFrame
+    df_results = pd.concat([df_results, knn_results_df], ignore_index=True)
+
+    print(n, "list finished")
+
+    df_results = df_results.sort_values(by=['Title', 'Model'])#, ascending=[False, True])
+
+    print(df_results)
+
+df_results['Title'] = df_results['Title'].astype(str)
+
+
+# Iterate through the unique models in the dataset
+for model in df_results['Model'].unique():
+    # Filter the dataframe for the specific model
+    df_model = df_results[df_results['Model'] == model]
+
+    # Create a plot for the metrics
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1-score']
+    df_plot = df_model.melt(id_vars=['Title'], value_vars=metrics,
+                            var_name='Metric', value_name='Value')
+    df_plot = df_plot.sort_values(by='Title', key=lambda col: col.str.extract(r'(\d+)')[0].astype(int))
+
+    # Multiply metric values by 100
+    df_plot['Value'] *= 100
+
+    # Convert 'Title' to a categorical variable to ensure equal spacing
+    df_plot['Title'] = pd.Categorical(df_plot['Title'], categories=df_plot['Title'].unique(), ordered=True)
+
+    # Start plotting
+    plt.figure(figsize=(10, 6))
+
+    # Define custom line styles for each metric
+    line_styles = {
+        'Accuracy': 'solid',
+        'Precision': 'dashdot',
+        'Recall': 'dashed',
+        'F1-score': 'dotted'
+    }
+
+    for metric, style in line_styles.items():
+        subset = df_plot[df_plot['Metric'] == metric]
+        plt.plot(subset['Title'].cat.codes, subset['Value'], label=metric, color='black', linestyle=style, linewidth=2)
+
+    # Adjust the y-axis to focus on the metric range
+    start_value = 25
+    end_value = 100
+   
+    tick_step = 5  # Smaller tick step for percentage scale
+    ticks = np.arange(start_value, end_value + tick_step, tick_step) #end_value + tick_step
+    plt.ylim(start_value, end_value)
+    plt.yticks(ticks)
+
+    # Set x-axis ticks and labels
+    plt.xticks(ticks=range(len(df_plot['Title'].unique())), labels=df_plot['Title'].unique(), rotation=90)
+    plt.margins(x=0.01)
+
+    # Add title and labels
+    plt.title(f"Performance metrics for {model}", fontsize=14, pad=10)
+    plt.xlabel("Top n classificator's codes, n = 1, ..., 200", fontsize=12, labelpad=10)
+    plt.ylabel("Metric value, %", fontsize=12)  # Updated label to indicate percentages
+    plt.legend(fontsize=12, loc='upper right')
+    plt.grid(axis='both', linestyle='--', alpha=0.7)
+
+    # Change the color of the chart frame (spines)
+    for spine in plt.gca().spines.values():
+        spine.set_edgecolor('lightgray')
+
+    # Add threshold line and fill everything below it
+    threshold = 50
+    plt.plot(df_plot['Title'].cat.codes, [threshold] * len(df_plot['Title']), color='red', linestyle='--', lw=1.5, label='50% threshold')
+    x_values = np.arange(len(df_plot['Title'].unique()))
+    titles = df_plot['Title'].unique()
+
+    # Align 'values' with the titles
+    values = df_plot.groupby('Title', observed=False)['Value'].first().reindex(titles).values
+
+    # Ensure alignment and offset-free fill
+    plt.fill_between(x_values, 0, threshold, color='red', alpha=0.1, label=f'Below {threshold}%')
+
+    # Set x-axis ticks to display only every second label
+    plt.xticks(ticks=x_values[::5], labels=titles[::5], rotation=90) #::2, ::4, ::5, top200 naudojau ::3
+   
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+end_time = time.time()
+execution_time = end_time - start_time
+print(f"Execution time: {execution_time} seconds")
